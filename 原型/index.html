@@ -49,7 +49,7 @@ button.small { font-size:11px; padding:5px 8px; }
   <div class="res-row"><span class="label">🧪 养分</span><span class="val nutrient" id="res-nutrient">0</span></div>
   <div class="res-row"><span class="label">🍎 果(手牌)</span><span class="val fruit" id="res-fruit">3</span></div>
   <h2>🎮 操作</h2>
-  <button id="btn-sow" disabled>🌰 播种 (消耗2果,1AP)</button>
+  <button id="btn-sow" disabled>🌰 播种 (消耗1果,1AP)</button>
   <button id="btn-end-turn">⏩ 结束回合</button>
   <button id="btn-skip" class="small">跳过移动</button>
   <div class="tile-info" id="tile-info">点击地块查看信息</div>
@@ -73,7 +73,7 @@ var CFG = {
     fruit:  { water:0, light:0, earth:0 },
   },
   LEAF_NUTRIENT: 2,
-  FRUIT_TO_SEED: 2,
+  FRUIT_TO_SEED: 1,
   DECAY_START: 999,  // 先不启用衰减
   DECAY_AMOUNT: 1,
   DECAY_DOT: 0.10,
@@ -451,26 +451,30 @@ function consumeResources() {
 
 function pieceBehaviors() {
   var order = ['root','leaf','stem','flower','fruit','seed'];
-  var done = {};
 
-  for (var oi=0; oi<order.length; oi++) {
-    var type=order[oi];
-    for (var y=0; y<CFG.BOARD_H; y++) {
-      for (var x=0; x<CFG.BOARD_W; x++) {
-        for (var i=0; i<G.pieces[y][x].length; i++) {
-          var p=G.pieces[y][x][i];
-          if (p.type!==type || p.owner!=='player') continue;
-          var key=x+','+y+','+type;
-          if (done[key]) continue;
-          done[key]=true;
-
-          if (type==='root') behaviorRoot(x,y);
-          else if (type==='leaf') behaviorLeaf(x,y);
-          else if (type==='stem') behaviorStem(x,y);
-          else if (type==='flower') behaviorFlower(x,y);
-          else if (type==='seed') behaviorSeed(x,y);
-        }
+  // 快照：只处理阶段开始时已存在的棋子，新增的不在本轮处理
+  var snapshot = [];
+  for (var y=0; y<CFG.BOARD_H; y++) {
+    for (var x=0; x<CFG.BOARD_W; x++) {
+      for (var i=0; i<G.pieces[y][x].length; i++) {
+        var p = G.pieces[y][x][i];
+        if (p.owner==='player') snapshot.push({x:x, y:y, piece:p});
       }
+    }
+  }
+  snapshot.sort(function(a,b){ return order.indexOf(a.piece.type)-order.indexOf(b.piece.type); });
+
+  for (var i=0; i<snapshot.length; i++) {
+    var s = snapshot[i];
+    // 检查棋子是否还存在（可能已被发芽/结果等行为移除）
+    if (G.pieces[s.y][s.x].indexOf(s.piece)===-1) continue;
+
+    switch (s.piece.type) {
+      case 'root':   behaviorRoot(s.x,s.y); break;
+      case 'leaf':   behaviorLeaf(s.x,s.y); break;
+      case 'stem':   behaviorStem(s.x,s.y); break;
+      case 'flower': behaviorFlower(s.x,s.y); break;
+      case 'seed':   behaviorSeed(s.x,s.y); break;
     }
   }
 }
