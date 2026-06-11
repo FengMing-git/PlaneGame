@@ -385,6 +385,7 @@ function resolveTurn() {
 
   if (G.playerHp<=0) { G.gameOver='lose'; addLog('玩家HP归零！','warn'); render(); updateUI(); return; }
 
+  stemFlowering();
   collectResources();
   collectFruits();
 
@@ -491,11 +492,7 @@ function behaviorLeaf(x,y) {
 }
 
 function behaviorStem(x,y) {
-  if (!tileHas(x,y,'flower','player')) {
-    addPiece(x,y,'flower','player');
-    addLog('茎在('+x+','+y+')开花','good');
-    return;
-  }
+  // 回合开始时：只生叶
   for (var d=0; d<DIRS.length; d++) {
     var nx=x+DIRS[d][0], ny=y+DIRS[d][1];
     if (nx>=0&&nx<CFG.BOARD_W&&ny>=0&&ny<CFG.BOARD_H) {
@@ -512,6 +509,21 @@ function behaviorFlower(x,y) {
   removePiece(x,y,'flower','player');
   addPiece(x,y,'fruit','player');
   addLog('花在('+x+','+y+')结果','good');
+}
+
+// 回合预备时：茎开花（果占位时不生成花，保证两回合一果）
+function stemFlowering() {
+  for (var y=0; y<CFG.BOARD_H; y++) {
+    for (var x=0; x<CFG.BOARD_W; x++) {
+      var hasStem = tileHas(x,y,'stem','player');
+      var hasFlower = tileHas(x,y,'flower','player');
+      var hasFruit = tileHas(x,y,'fruit','player');
+      if (hasStem && !hasFlower && !hasFruit) {
+        addPiece(x,y,'flower','player');
+        addLog('茎在('+x+','+y+')开花(预备时)','good');
+      }
+    }
+  }
 }
 
 function behaviorSeed(x,y) {
