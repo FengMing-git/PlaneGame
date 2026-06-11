@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>植物棋类 - 原型 v0.1</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#1a1a2e; color:#e0e0e0; font-family:'Microsoft YaHei',sans-serif; display:flex; height:100vh; overflow:hidden; }
+#sidebar { width:280px; background:#16213e; padding:16px; display:flex; flex-direction:column; gap:10px; overflow-y:auto; flex-shrink:0; }
+#board-wrap { flex:1; display:flex; align-items:center; justify-content:center; padding:20px; }
+canvas { border:2px solid #0f3460; border-radius:4px; cursor:pointer; }
+h2 { color:#e94560; font-size:16px; border-bottom:1px solid #0f3460; padding-bottom:4px; margin-top:4px; }
+.stat-row { display:flex; justify-content:space-between; font-size:13px; }
+.stat-row span:last-child { color:#f0c040; }
+.res-row { display:flex; justify-content:space-between; font-size:12px; padding:1px 0; }
+.res-row .label { color:#aaa; }
+.res-row .val { font-weight:bold; }
+.water { color:#4dc9f6; }
+.light { color:#ffd700; }
+.earth { color:#cd853f; }
+.nutrient { color:#7cfc00; }
+.fruit { color:#ff6b6b; }
+button { background:#e94560; color:#fff; border:none; padding:8px; font-size:14px; border-radius:4px; cursor:pointer; font-weight:bold; }
+button:hover { background:#ff6b81; }
+button:disabled { background:#555; cursor:not-allowed; }
+button.small { font-size:11px; padding:5px 8px; }
+#log { flex:1; background:#0f0f1a; border-radius:4px; padding:6px; font-size:11px; overflow-y:auto; min-height:60px; max-height:150px; }
+#log .entry { padding:1px 0; border-bottom:1px solid #1a1a2e; }
+#log .warn { color:#ff6b6b; }
+#log .good { color:#7cfc00; }
+#log .info { color:#4dc9f6; }
+.phase-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; background:#e94560; color:#fff; }
+.tile-info { font-size:10px; color:#888; min-height:30px; }
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <h2>🌱 植物棋类原型</h2>
+  <div class="stat-row"><span>回合</span><span id="turn-num">1</span></div>
+  <div class="stat-row"><span>阶段</span><span class="phase-badge" id="phase">你的回合</span></div>
+  <div class="stat-row"><span>HP</span><span id="hp-display">20/20</span></div>
+  <div class="stat-row"><span>ATK / DEF</span><span id="ad-display">6 / 2</span></div>
+  <div class="stat-row"><span>行动力</span><span id="ap-display">4/4</span></div>
+  <h2>📦 资源</h2>
+  <div class="res-row"><span class="label">💧 水</span><span class="val water" id="res-water">0</span></div>
+  <div class="res-row"><span class="label">☀️ 光</span><span class="val light" id="res-light">0</span></div>
+  <div class="res-row"><span class="label">🪨 土</span><span class="val earth" id="res-earth">0</span></div>
+  <div class="res-row"><span class="label">🧪 养分</span><span class="val nutrient" id="res-nutrient">0</span></div>
+  <div class="res-row"><span class="label">🍎 果(手牌)</span><span class="val fruit" id="res-fruit">3</span></div>
+  <h2>🎮 操作</h2>
+  <button id="btn-sow" disabled>🌰 播种 (消耗2果,1AP)</button>
+  <button id="btn-end-turn">⏩ 结束回合</button>
+  <button id="btn-skip" class="small">跳过移动</button>
+  <div class="tile-info" id="tile-info">点击地块查看信息</div>
+  <h2>📜 日志</h2>
+  <div id="log"></div>
+</div>
+<div id="board-wrap"><canvas id="board"></canvas></div>
+<script>
+// ============================================================
+// 配置表 - 所有数值在这里改
+// ============================================================
+var CFG = {
+  BOARD_W: 6, BOARD_H: 6, CELL: 90,
+  TILE_OUTPUT: { water: 5, light: 5, earth: 5 },
+  COST: {
+    seed:   { water:2, light:1, earth:2 },
+    root:   { water:1, light:0, earth:1 },
+    stem:   { water:1, light:1, earth:0 },
+    leaf:   { water:1, light:2, earth:0 },
+    flower: { water:1, light:1, earth:1 },
+    fruit:  { water:0, light:0, earth:0 },
+  },
+  LEAF_NUTRIENT: 2,
+  FRUIT_TO_SEED: 2,
+  DECAY_START: 999,  // 先不启用衰减
+  DECAY_AMOUNT: 1,
+  DECAY_DOT: 0.10,
+  PLAYER_HP:  20, PLAYER_ATK: 6, PLAYER_DEF: 2,
+  PLAYER_AP:  4,
+  AP_MOVE:    1, AP_ATTACK: 2, AP_SOW: 1,
+  STEM_SLOW: 1, STEM_DEFENSE: 0.5,
+  ENEMY: { hp:12, atk:5, def:2, move:2, range:1, ai:'aggressive' },
+};
+
+// ============================================================
+// 游戏状态
+// ============================================================
+var G = {
+  board: [], pieces: [],
+  playerX:0, playerY:0,
+  playerHp:20, playerMaxHp:20,
+  playerAtk:6, playerDef:2,
+  playerAp:4, playerMaxAp:4,
+  resources: { water:0, light:0, earth:0, nutrient:0 },
+  handFruit: 3,
+  turn: 1, phase: 'action',
+  enemies: [], log: [], gameOver: null, decayActive: false,
+};
+
+function init() {
+  for (var y=0; y<CFG.BOARD_H; y++) {
+    G.board[y] = []; G.pieces[y] = [];
+    for (var x=0; x<CFG.BOARD_W; x++) {
+      G.board[y][x] = { water:0, light:0, earth:0 };
+      G.pieces[y][x] = [];
+    }
+  }
+  G.enemies = [{
+    x:CFG.BOARD_W-1, y:CFG.BOARD_H-1,
+    type:'insect', ai:CFG.ENEMY.ai,
+    hp:CFG.ENEMY.hp, maxHp:CFG.ENEMY.hp,
+    atk:CFG.ENEMY.atk, def:CFG.ENEMY.def,
+    move:CFG.ENEMY.move, range:CFG.ENEMY.range,
+  }];
+  G.playerHp=CFG.PLAYER_HP; G.playerMaxHp=CFG.PLAYER_HP;
+  G.playerAtk=CFG.PLAYER_ATK; G.playerDef=CFG.PLAYER_DEF;
+  G.playerAp=CFG.PLAYER_AP; G.playerMaxAp=CFG.PLAYER_AP;
+  G.handFruit=3;
+  addLog('游戏开始！3个果，播种建立植株，击败敌人获胜。','info');
+  addLog('点击相邻地块=移动 | 点击相邻敌人=攻击 | 播种按钮=放置种子','info');
+  render(); updateUI();
+}
+
+function tileHas(x,y,type,owner) {
+  if (x<0||x>=CFG.BOARD_W||y<0||y>=CFG.BOARD_H) return false;
+  return G.pieces[y][x].some(function(p){ return p.type===type && (!owner||p.owner===owner); });
+}
+
+function addPiece(x,y,type,owner) {
+  if (x<0||x>=CFG.BOARD_W||y<0||y>=CFG.BOARD_H) return null;
+  var p = { type:type, owner:owner||'player', hp:1 };
+  G.pieces[y][x].push(p); return p;
+}
+
+function removePiece(x,y,type,owner) {
+  for (var i=0; i<G.pieces[y][x].length; i++) {
+    var p=G.pieces[y][x][i];
+    if (p.type===type && (!owner||p.owner===owner)) { G.pieces[y][x].splice(i,1); return true; }
+  }
+  return false;
+}
+
+function addLog(msg,cls) { G.log.push({msg:msg,cls:cls||''}); if(G.log.length>60) G.log.shift(); }
+function dist(x1,y1,x2,y2) { return Math.abs(x1-x2)+Math.abs(y1-y2); }
+var DIRS = [[0,-1],[1,0],[0,1],[-1,0]];
+var PNAMES = { seed:'种',root:'根',stem:'茎',leaf:'叶',flower:'花',fruit:'果' };
+
+// ============================================================
+// 渲染
+// ============================================================
+function render() {
+  var c = document.getElementById('board');
+  c.width = CFG.BOARD_W * CFG.CELL;
+  c.height = CFG.BOARD_H * CFG.CELL;
+  var ctx = c.getContext('2d');
+  var S = CFG.CELL;
+
+  for (var y=0; y<CFG.BOARD_H; y++) {
+    for (var x=0; x<CFG.BOARD_W; x++) {
+      ctx.fillStyle = (x+y)%2===0 ? '#2d5a27' : '#3a6b33';
+      ctx.fillRect(x*S, y*S, S, S);
+
+      if (x===G.playerX && y===G.playerY) {
+        ctx.fillStyle = 'rgba(233,69,96,0.3)';
+        ctx.fillRect(x*S, y*S, S, S);
+      }
+
+      ctx.strokeStyle = '#1a3a16'; ctx.lineWidth = 1;
+      ctx.strokeRect(x*S, y*S, S, S);
+
+      ctx.fillStyle = '#555'; ctx.font = '9px monospace';
+      ctx.fillText(x+','+y, x*S+3, y*S+12);
+
+      var t = G.board[y][x];
+      ctx.fillStyle = '#888'; ctx.font = '8px monospace';
+      ctx.fillText('D'+t.water+' G'+t.light+' T'+t.earth, x*S+3, y*S+S-4);
+    }
+  }
+
+  // 己方棋子
+  for (var y=0; y<CFG.BOARD_H; y++) {
+    for (var x=0; x<CFG.BOARD_W; x++) {
+      var pieces = G.pieces[y][x];
+      var px = x*S + S/2, py = y*S + S/2;
+      for (var i=0; i<pieces.length; i++) {
+        drawPiece(ctx, px, py, i, pieces[i].type, S);
+      }
+    }
+  }
+
+  // 玩家
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 22px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('P', G.playerX*S+S/2, G.playerY*S+S/2-18);
+  ctx.fillStyle = '#e94560'; ctx.font = 'bold 14px sans-serif';
+  ctx.fillText('玩家', G.playerX*S+S/2, G.playerY*S+S/2+4);
+  ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+
+  // 敌人
+  for (var i=0; i<G.enemies.length; i++) {
+    var e = G.enemies[i];
+    var ex = e.x*S+S/2, ey = e.y*S+S/2;
+    ctx.fillStyle = '#ff4444';
+    ctx.beginPath(); ctx.arc(ex, ey-6, 14, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('敌', ex, ey-6);
+    ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+
+    // HP bar
+    var bw=S*0.7, bh=5, bx=ex-bw/2, by=ey+14;
+    ctx.fillStyle='#333'; ctx.fillRect(bx,by,bw,bh);
+    var ratio = e.hp/e.maxHp;
+    ctx.fillStyle = ratio>0.5?'#4caf50':ratio>0.25?'#ff9800':'#f44336';
+    ctx.fillRect(bx,by,bw*ratio,bh);
+    ctx.fillStyle='#fff'; ctx.font='8px monospace';
+    ctx.fillText(e.hp+'/'+e.maxHp, ex, by+bh+8);
+  }
+}
+
+function drawPiece(ctx, x, y, idx, type, S) {
+  var r = 12;
+  var positions = [[-16,-16],[16,-16],[-16,16],[16,16],[0,-20],[0,20],[-20,0],[20,0]];
+  var pos = positions[idx % positions.length];
+  var cx = x + pos[0], cy = y + pos[1];
+
+  var colors = { seed:'#8B4513', root:'#654321', stem:'#228B22', leaf:'#32CD32', flower:'#FF69B4', fruit:'#FF6666' };
+  ctx.fillStyle = colors[type] || '#888';
+  ctx.beginPath();
+  ctx.arc(cx, cy, r*0.55, 0, Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 8px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(PNAMES[type]||type, cx, cy);
+  ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+}
+
+// ============================================================
+// UI 更新
+// ============================================================
+function updateUI() {
+  document.getElementById('turn-num').textContent = G.turn;
+  document.getElementById('phase').textContent = G.phase==='action' ? '你的回合' : '结算中...';
+  document.getElementById('hp-display').textContent = G.playerHp+'/'+G.playerMaxHp;
+  document.getElementById('ad-display').textContent = G.playerAtk+' / '+G.playerDef;
+  document.getElementById('ap-display').textContent = G.playerAp+'/'+G.playerMaxAp;
+  document.getElementById('res-water').textContent = G.resources.water;
+  document.getElementById('res-light').textContent = G.resources.light;
+  document.getElementById('res-earth').textContent = G.resources.earth;
+  document.getElementById('res-nutrient').textContent = G.resources.nutrient;
+  document.getElementById('res-fruit').textContent = G.handFruit;
+
+  var sowBtn = document.getElementById('btn-sow');
+  sowBtn.disabled = G.phase!=='action' || G.playerAp<CFG.AP_SOW || G.handFruit<CFG.FRUIT_TO_SEED;
+
+  var endBtn = document.getElementById('btn-end-turn');
+  endBtn.disabled = G.phase!=='action';
+
+  var logDiv = document.getElementById('log');
+  var html = '';
+  for (var i=Math.max(0,G.log.length-20); i<G.log.length; i++) {
+    var l = G.log[i];
+    html += '<div class="entry '+l.cls+'">['+G.turn+'] '+l.msg+'</div>';
+  }
+  logDiv.innerHTML = html;
+  logDiv.scrollTop = logDiv.scrollHeight;
+
+  if (G.gameOver) {
+    document.getElementById('phase').textContent = G.gameOver==='win' ? 'WIN' : 'LOSE';
+    endBtn.disabled = true; sowBtn.disabled = true;
+    setTimeout(function(){ alert(G.gameOver==='win'?'你赢了！':'你输了！'); }, 200);
+  }
+}
+
+// ============================================================
+// 点击处理
+// ============================================================
+document.getElementById('board').addEventListener('click', function(e) {
+  if (G.phase!=='action' || G.gameOver) return;
+  var rect = e.target.getBoundingClientRect();
+  var x = Math.floor((e.clientX-rect.left)/CFG.CELL);
+  var y = Math.floor((e.clientY-rect.top)/CFG.CELL);
+  if (x<0||x>=CFG.BOARD_W||y<0||y>=CFG.BOARD_H) return;
+
+  var d = dist(G.playerX, G.playerY, x, y);
+
+  // 点击敌人
+  var enemy = null;
+  for (var i=0; i<G.enemies.length; i++) {
+    if (G.enemies[i].x===x && G.enemies[i].y===y) { enemy=G.enemies[i]; break; }
+  }
+  if (enemy && d<=1) { tryAttack(enemy); return; }
+
+  // 点击相邻空地块 -> 移动
+  var blocked = false;
+  for (var i=0; i<G.enemies.length; i++) {
+    if (G.enemies[i].x===x && G.enemies[i].y===y) { blocked=true; break; }
+  }
+  if (d===1 && !blocked) { tryMove(x,y); return; }
+
+  showTileInfo(x,y);
+});
+
+document.getElementById('btn-sow').addEventListener('click', function() {
+  if (G.phase!=='action'||G.playerAp<CFG.AP_SOW||G.handFruit<CFG.FRUIT_TO_SEED) return;
+  G.playerAp -= CFG.AP_SOW;
+  G.handFruit -= CFG.FRUIT_TO_SEED;
+  addPiece(G.playerX, G.playerY, 'seed', 'player');
+  addLog('播种！('+G.playerX+','+G.playerY+')放置种子。','good');
+  render(); updateUI();
+});
+
+document.getElementById('btn-end-turn').addEventListener('click', function() {
+  if (G.phase!=='action') return;
+  G.phase='resolving'; updateUI();
+  setTimeout(resolveTurn, 200);
+});
+
+document.getElementById('btn-skip').addEventListener('click', function() {
+  if (G.phase!=='action') return;
+  G.playerAp=0;
+  addLog('跳过剩余行动。','info');
+  render(); updateUI();
+});
+
+function tryMove(x,y) {
+  var stems = 0;
+  for (var i=0; i<G.pieces[y][x].length; i++) {
+    if (G.pieces[y][x][i].type==='stem') stems++;
+  }
+  var cost = CFG.AP_MOVE + stems*CFG.STEM_SLOW;
+  if (G.playerAp<cost) { addLog('AP不足！需'+cost+' 当前'+G.playerAp,'warn'); return; }
+  G.playerAp-=cost; G.playerX=x; G.playerY=y;
+  var sm = stems>0?' (茎减速+'+stems+')':'';
+  addLog('移动到('+x+','+y+') 消耗'+cost+'AP'+sm,'info');
+  render(); updateUI();
+}
+
+function tryAttack(enemy) {
+  if (G.playerAp<CFG.AP_ATTACK) { addLog('AP不足！需'+CFG.AP_ATTACK,'warn'); return; }
+  G.playerAp-=CFG.AP_ATTACK;
+  var dmg = Math.max(G.playerAtk-enemy.def, 1);
+  enemy.hp-=dmg;
+  addLog('攻击！造成'+dmg+'伤害('+G.playerAtk+'ATK-'+enemy.def+'DEF) 敌HP:'+enemy.hp,'good');
+  if (enemy.hp<=0) {
+    G.enemies = G.enemies.filter(function(e){ return e!==enemy; });
+    addLog('敌人被消灭！','good'); checkWin();
+  }
+  render(); updateUI();
+}
+
+function showTileInfo(x,y) {
+  var t=G.board[y][x]; var ps=G.pieces[y][x];
+  var enemy=null;
+  for (var i=0; i<G.enemies.length; i++) {
+    if (G.enemies[i].x===x && G.enemies[i].y===y) { enemy=G.enemies[i]; break; }
+  }
+  var info='('+x+','+y+') D'+t.water+' G'+t.light+' T'+t.earth;
+  if (ps.length>0) {
+    info+=' | ';
+    for (var i=0; i<ps.length; i++) {
+      info+=(PNAMES[ps[i].type]||ps[i].type);
+      if (i<ps.length-1) info+=',';
+    }
+  }
+  if (enemy) info+=' | 敌HP:'+enemy.hp+'/'+enemy.maxHp+' ATK:'+enemy.atk+' DEF:'+enemy.def;
+  document.getElementById('tile-info').textContent=info;
+}
+
+// ============================================================
+// 回合结算
+// ============================================================
+function resolveTurn() {
+  produceResources();
+  consumeResources();
+
+  G.turn++;
+
+  pieceBehaviors();
+  enemyAI();
+
+  if (G.playerHp<=0) { G.gameOver='lose'; addLog('玩家HP归零！','warn'); render(); updateUI(); return; }
+
+  collectResources();
+  collectFruits();
+
+  if (G.turn>=CFG.DECAY_START) {
+    G.decayActive=true;
+    var dot=Math.ceil(G.playerMaxHp*CFG.DECAY_DOT);
+    G.playerHp-=dot;
+    addLog('资源衰减！产出-'+CFG.DECAY_AMOUNT+' 玩家受'+dot+'伤害','warn');
+    if (G.playerHp<=0) { G.gameOver='lose'; addLog('被资源枯竭拖死！','warn'); render(); updateUI(); return; }
+  }
+
+  G.playerAp=G.playerMaxAp;
+  G.phase='action';
+  addLog('--- 第 '+G.turn+' 回合 ---','info');
+  render(); updateUI();
+}
+
+function produceResources() {
+  var decay = G.decayActive ? CFG.DECAY_AMOUNT : 0;
+  for (var y=0; y<CFG.BOARD_H; y++) {
+    for (var x=0; x<CFG.BOARD_W; x++) {
+      var o=CFG.TILE_OUTPUT;
+      G.board[y][x].water += Math.max(o.water-decay,0);
+      G.board[y][x].light += Math.max(o.light-decay,0);
+      G.board[y][x].earth += Math.max(o.earth-decay,0);
+    }
+  }
+}
+
+function consumeResources() {
+  var order = ['root','leaf','stem','flower','fruit','seed'];
+  for (var y=0; y<CFG.BOARD_H; y++) {
+    for (var x=0; x<CFG.BOARD_W; x++) {
+      var toRemove = [];
+      var pieces = G.pieces[y][x].slice().sort(function(a,b){
+        return order.indexOf(a.type)-order.indexOf(b.type);
+      });
+
+      for (var i=0; i<pieces.length; i++) {
+        var p=pieces[i], cost=CFG.COST[p.type];
+        if (!cost || p.owner!=='player') continue;
+        var t=G.board[y][x];
+        var nw=cost.water||0, nl=cost.light||0, ne=cost.earth||0;
+        var hw=t.water>=nw, hl=t.light>=nl, he=t.earth>=ne;
+        if (hw&&hl&&he) {
+          t.water-=nw; t.light-=nl; t.earth-=ne;
+        } else {
+          if (p.type==='seed') {
+            addLog('种在('+x+','+y+')休眠(缺'+(!hw?'水':!hl?'光':'土')+')','warn');
+          } else {
+            toRemove.push(p);
+            addLog(PNAMES[p.type]+'在('+x+','+y+')枯萎(缺'+(!hw?'水':!hl?'光':'土')+')','warn');
+          }
+        }
+      }
+
+      for (var i=0; i<toRemove.length; i++) {
+        var idx=G.pieces[y][x].indexOf(toRemove[i]);
+        if (idx>=0) G.pieces[y][x].splice(idx,1);
+      }
+    }
+  }
+}
+
+function pieceBehaviors() {
+  var order = ['root','leaf','stem','flower','fruit','seed'];
+  var done = {};
+
+  for (var oi=0; oi<order.length; oi++) {
+    var type=order[oi];
+    for (var y=0; y<CFG.BOARD_H; y++) {
+      for (var x=0; x<CFG.BOARD_W; x++) {
+        for (var i=0; i<G.pieces[y][x].length; i++) {
+          var p=G.pieces[y][x][i];
+          if (p.type!==type || p.owner!=='player') continue;
+          var key=x+','+y+','+type;
+          if (done[key]) continue;
+          done[key]=true;
+
+          if (type==='root') behaviorRoot(x,y);
+          else if (type==='leaf') behaviorLeaf(x,y);
+          else if (type==='stem') behaviorStem(x,y);
+          else if (type==='flower') behaviorFlower(x,y);
+          else if (type==='seed') behaviorSeed(x,y);
+        }
+      }
+    }
+  }
+}
+
+function behaviorRoot(x,y) {
+  if (!tileHas(x,y,'stem','player')) {
+    addPiece(x,y,'stem','player');
+    addLog('根在('+x+','+y+')生成茎','good');
+  }
+}
+
+function behaviorLeaf(x,y) {
+  G.resources.nutrient += CFG.LEAF_NUTRIENT;
+}
+
+function behaviorStem(x,y) {
+  if (!tileHas(x,y,'flower','player')) {
+    addPiece(x,y,'flower','player');
+    addLog('茎在('+x+','+y+')开花','good');
+    return;
+  }
+  for (var d=0; d<DIRS.length; d++) {
+    var nx=x+DIRS[d][0], ny=y+DIRS[d][1];
+    if (nx>=0&&nx<CFG.BOARD_W&&ny>=0&&ny<CFG.BOARD_H) {
+      if (!tileHas(nx,ny,'leaf','player')) {
+        addPiece(nx,ny,'leaf','player');
+        addLog('茎在('+x+','+y+')周围('+nx+','+ny+')生叶','good');
+        return;
+      }
+    }
+  }
+}
+
+function behaviorFlower(x,y) {
+  removePiece(x,y,'flower','player');
+  addPiece(x,y,'fruit','player');
+  addLog('花在('+x+','+y+')结果','good');
+}
+
+function behaviorSeed(x,y) {
+  removePiece(x,y,'seed','player');
+  addPiece(x,y,'root','player');
+  addPiece(x,y,'stem','player');
+  for (var d=0; d<DIRS.length; d++) {
+    var nx=x+DIRS[d][0], ny=y+DIRS[d][1];
+    if (nx>=0&&nx<CFG.BOARD_W&&ny>=0&&ny<CFG.BOARD_H) {
+      if (!tileHas(nx,ny,'leaf','player')) {
+        addPiece(nx,ny,'leaf','player');
+        addLog('种在('+x+','+y+')发芽！根+茎+叶@('+nx+','+ny+')','good');
+        return;
+      }
+    }
+  }
+  addLog('种在('+x+','+y+')发芽！根+茎(周围无空位放叶)','good');
+}
+
+// ============================================================
+// 资源收集
+// ============================================================
+function collectResources() {
+  var seen = {}, total={w:0,l:0,e:0};
+  function collect(x,y) {
+    var k=x+','+y; if (seen[k]) return; seen[k]=true;
+    var t=G.board[y][x];
+    total.w+=t.water; total.l+=t.light; total.e+=t.earth;
+    t.water=0; t.light=0; t.earth=0;
+  }
+  collect(G.playerX, G.playerY);
+  for (var y=0; y<CFG.BOARD_H; y++) {
+    for (var x=0; x<CFG.BOARD_W; x++) {
+      if (tileHas(x,y,'root','player')) collect(x,y);
+    }
+  }
+  G.resources.water+=total.w; G.resources.light+=total.l; G.resources.earth+=total.e;
+  if (total.w+total.l+total.e>0) {
+    addLog('收集资源 D'+total.w+' G'+total.l+' T'+total.e,'good');
+  }
+}
+
+function collectFruits() {
+  var count=0;
+  for (var y=0; y<CFG.BOARD_H; y++) {
+    for (var x=0; x<CFG.BOARD_W; x++) {
+      var rm=[];
+      for (var i=0; i<G.pieces[y][x].length; i++) {
+        if (G.pieces[y][x][i].type==='fruit' && G.pieces[y][x][i].owner==='player') {
+          rm.push(i); count++;
+        }
+      }
+      for (var i=rm.length-1; i>=0; i--) G.pieces[y][x].splice(rm[i],1);
+    }
+  }
+  G.handFruit+=count;
+  if (count>0) addLog('收获'+count+'个果！手牌:'+G.handFruit,'good');
+}
+
+// ============================================================
+// 敌人 AI
+// ============================================================
+function enemyAI() {
+  for (var i=0; i<G.enemies.length; i++) {
+    var e=G.enemies[i];
+    if (e.ai==='aggressive') enemyAggressive(e);
+    else if (e.ai==='calm') enemyCalm(e);
+    else enemyPassive(e);
+  }
+}
+
+function enemyAggressive(e) {
+  var targets = findNearby(e);
+  if (targets.length>0) {
+    var t=targets[0];
+    if (t.type==='player') {
+      var dmg=Math.max(e.atk-G.playerDef,1);
+      G.playerHp-=dmg;
+      addLog('敌人攻击玩家！造成'+dmg+'伤害 HP:'+G.playerHp,'warn');
+    } else if (t.piece) {
+      var idx=G.pieces[t.y][t.x].indexOf(t.piece);
+      if (idx>=0) {
+        G.pieces[t.y][t.x].splice(idx,1);
+        addLog('敌人摧毁了('+t.x+','+t.y+')的'+PNAMES[t.piece.type],'warn');
+      }
+    }
+    return;
+  }
+  moveToward(e, G.playerX, G.playerY);
+}
+
+function enemyCalm(e) {
+  var targets = findNearby(e);
+  if (targets.length>0) enemyAggressive(e);
+}
+
+function enemyPassive(e) { /* 不动作 */ }
+
+function findNearby(e) {
+  var ts=[];
+  if (dist(e.x,e.y,G.playerX,G.playerY)<=e.range) {
+    ts.push({type:'player',dist:dist(e.x,e.y,G.playerX,G.playerY)});
+  }
+  for (var y=0; y<CFG.BOARD_H; y++) {
+    for (var x=0; x<CFG.BOARD_W; x++) {
+      if (dist(e.x,e.y,x,y)<=e.range) {
+        for (var i=0; i<G.pieces[y][x].length; i++) {
+          if (G.pieces[y][x][i].owner==='player') {
+            ts.push({type:'piece',piece:G.pieces[y][x][i],x:x,y:y,dist:dist(e.x,e.y,x,y)});
+          }
+        }
+      }
+    }
+  }
+  ts.sort(function(a,b){return a.dist-b.dist;});
+  return ts;
+}
+
+function moveToward(e, tx, ty) {
+  var bestX=e.x, bestY=e.y, bestD=dist(e.x,e.y,tx,ty);
+  var q=[[e.x,e.y,0]], vis={}, moved=false;
+  vis[e.x+','+e.y]=true;
+
+  while (q.length>0) {
+    var n=q.shift(), cx=n[0], cy=n[1], steps=n[2];
+    if (steps>=e.move) continue;
+    for (var d=0; d<DIRS.length; d++) {
+      var nx=cx+DIRS[d][0], ny=cy+DIRS[d][1];
+      var k=nx+','+ny;
+      if (nx<0||nx>=CFG.BOARD_W||ny<0||ny>=CFG.BOARD_H) continue;
+      if (vis[k]) continue;
+      var blocked=false;
+      for (var i=0; i<G.enemies.length; i++) {
+        if (G.enemies[i].x===nx && G.enemies[i].y===ny) { blocked=true; break; }
+      }
+      if (G.playerX===nx && G.playerY===ny) blocked=true;
+      if (blocked) continue;
+      vis[k]=true;
+      var nd=dist(nx,ny,tx,ty);
+      if (nd<bestD || (nd===bestD&&!moved)) {
+        bestX=nx; bestY=ny; bestD=nd; moved=true;
+      }
+      q.push([nx,ny,steps+1]);
+    }
+  }
+
+  if (moved) {
+    addLog('敌人从('+e.x+','+e.y+')移动到('+bestX+','+bestY+')','warn');
+    e.x=bestX; e.y=bestY;
+  }
+}
+
+// ============================================================
+// 胜负
+// ============================================================
+function checkWin() {
+  if (G.enemies.length===0) {
+    G.gameOver='win';
+    addLog('所有敌人被消灭，胜利！','good');
+    render(); updateUI();
+  }
+}
+
+// ============================================================
+// 启动
+// ============================================================
+init();
+</script>
+</body>
+</html>
