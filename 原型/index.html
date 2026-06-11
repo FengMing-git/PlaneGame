@@ -130,7 +130,7 @@ function tileHas(x,y,type,owner) {
 
 function addPiece(x,y,type,owner) {
   if (x<0||x>=CFG.BOARD_W||y<0||y>=CFG.BOARD_H) return null;
-  var p = { type:type, owner:owner||'player', hp:1 };
+  var p = { type:type, owner:owner||'player', hp:1, active:false };
   G.pieces[y][x].push(p); return p;
 }
 
@@ -431,6 +431,7 @@ function consumeResources() {
         var hw=t.water>=nw, hl=t.light>=nl, he=t.earth>=ne;
         if (hw&&hl&&he) {
           t.water-=nw; t.light-=nl; t.earth-=ne;
+          p.active = true;  // 扎根成功，下回合可行动
         } else {
           if (p.type==='seed') {
             addLog('种在('+x+','+y+')休眠(缺'+(!hw?'水':!hl?'光':'土')+')','warn');
@@ -450,31 +451,27 @@ function consumeResources() {
 }
 
 function pieceBehaviors() {
+  // 只处理已扎根的棋子（经历过一次资源消耗后 active=true）
   var order = ['root','leaf','stem','flower','fruit','seed'];
+  for (var oi=0; oi<order.length; oi++) {
+    var type=order[oi];
+    for (var y=0; y<CFG.BOARD_H; y++) {
+      for (var x=0; x<CFG.BOARD_W; x++) {
+        for (var i=G.pieces[y][x].length-1; i>=0; i--) {
+          var p=G.pieces[y][x][i];
+          if (p.type!==type||p.owner!=='player'||!p.active) continue;
+          // 棋子可能已被移除（发芽/结果），检查是否还在
+          if (G.pieces[y][x].indexOf(p)===-1) continue;
 
-  // 快照：只处理阶段开始时已存在的棋子，新增的不在本轮处理
-  var snapshot = [];
-  for (var y=0; y<CFG.BOARD_H; y++) {
-    for (var x=0; x<CFG.BOARD_W; x++) {
-      for (var i=0; i<G.pieces[y][x].length; i++) {
-        var p = G.pieces[y][x][i];
-        if (p.owner==='player') snapshot.push({x:x, y:y, piece:p});
+          switch (type) {
+            case 'root':   behaviorRoot(x,y); break;
+            case 'leaf':   behaviorLeaf(x,y); break;
+            case 'stem':   behaviorStem(x,y); break;
+            case 'flower': behaviorFlower(x,y); break;
+            case 'seed':   behaviorSeed(x,y); break;
+          }
+        }
       }
-    }
-  }
-  snapshot.sort(function(a,b){ return order.indexOf(a.piece.type)-order.indexOf(b.piece.type); });
-
-  for (var i=0; i<snapshot.length; i++) {
-    var s = snapshot[i];
-    // 检查棋子是否还存在（可能已被发芽/结果等行为移除）
-    if (G.pieces[s.y][s.x].indexOf(s.piece)===-1) continue;
-
-    switch (s.piece.type) {
-      case 'root':   behaviorRoot(s.x,s.y); break;
-      case 'leaf':   behaviorLeaf(s.x,s.y); break;
-      case 'stem':   behaviorStem(s.x,s.y); break;
-      case 'flower': behaviorFlower(s.x,s.y); break;
-      case 'seed':   behaviorSeed(s.x,s.y); break;
     }
   }
 }
