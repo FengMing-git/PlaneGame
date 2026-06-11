@@ -120,6 +120,7 @@ function init() {
   G.handFruit=3;
   addLog('游戏开始！3个果，播种建立植株，击败敌人获胜。','info');
   addLog('点击相邻地块=移动 | 点击相邻敌人=攻击 | 播种按钮=放置种子','info');
+  addLog('📊 初始: 💧0 ☀0 🪨0 🧪0 🍎3 | HP:20 ATK:6 DEF:2 AP:4', 'info');
   render(); updateUI();
 }
 
@@ -395,6 +396,9 @@ function resolveTurn() {
     addLog('资源衰减！产出-'+CFG.DECAY_AMOUNT+' 玩家受'+dot+'伤害','warn');
     if (G.playerHp<=0) { G.gameOver='lose'; addLog('被资源枯竭拖死！','warn'); render(); updateUI(); return; }
   }
+
+  // 资源快照日志
+  addLog('📊 资源: 💧'+G.resources.water+' ☀'+G.resources.light+' 🪨'+G.resources.earth+' 🧪'+G.resources.nutrient+' 🍎'+G.handFruit+' | HP:'+G.playerHp+' ATK:'+G.playerAtk+' DEF:'+G.playerDef+' AP:'+G.playerMaxAp, 'info');
 
   G.playerAp=G.playerMaxAp;
   G.phase='action';
