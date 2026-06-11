@@ -49,7 +49,7 @@ button.small { font-size:11px; padding:5px 8px; }
   <div class="res-row"><span class="label">🧪 养分</span><span class="val nutrient" id="res-nutrient">0</span></div>
   <div class="res-row"><span class="label">🍎 果(手牌)</span><span class="val fruit" id="res-fruit">3</span></div>
   <h2>🎮 操作</h2>
-  <button id="btn-sow" disabled>🌰 播种 (消耗1果,1AP)</button>
+  <button id="btn-sow" disabled>🌰 播种 (消耗1果,2AP)</button>
   <button id="btn-end-turn">⏩ 结束回合</button>
   <button id="btn-skip" class="small">跳过移动</button>
   <div class="tile-info" id="tile-info">点击地块查看信息</div>
@@ -79,7 +79,7 @@ var CFG = {
   DECAY_DOT: 0.10,
   PLAYER_HP:  20, PLAYER_ATK: 6, PLAYER_DEF: 2,
   PLAYER_AP:  4,
-  AP_MOVE:    1, AP_ATTACK: 2, AP_SOW: 1,
+  AP_MOVE:    1, AP_ATTACK: 2, AP_SOW: 2,
   STEM_SLOW: 1, STEM_DEFENSE: 0.5,
   ENEMY: { hp:12, atk:5, def:2, move:2, range:1, ai:'aggressive' },
 };
