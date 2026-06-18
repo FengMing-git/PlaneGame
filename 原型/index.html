@@ -52,6 +52,7 @@ button.small { font-size:11px; padding:5px 8px; }
   <button id="btn-sow" disabled>🌰 播种 (消耗1果,2AP)</button>
   <button id="btn-end-turn">⏩ 结束回合</button>
   <button id="btn-skip" class="small">跳过移动</button>
+  <button id="btn-export" class="small" style="background:#0f3460;">📥 下载日志</button>
   <div class="tile-info" id="tile-info">点击地块查看信息</div>
   <h2>📜 日志</h2>
   <div id="log"></div>
@@ -397,8 +398,10 @@ function resolveTurn() {
     if (G.playerHp<=0) { G.gameOver='lose'; addLog('被资源枯竭拖死！','warn'); render(); updateUI(); return; }
   }
 
-  // 资源快照日志
-  addLog('📊 资源: 💧'+G.resources.water+' ☀'+G.resources.light+' 🪨'+G.resources.earth+' 🧪'+G.resources.nutrient+' 🍎'+G.handFruit+' | HP:'+G.playerHp+' ATK:'+G.playerAtk+' DEF:'+G.playerDef+' AP:'+G.playerMaxAp, 'info');
+  // 资源快照日志 (控制台+界面)
+  var resLine = '📊 T'+G.turn+' 💧'+G.resources.water+' ☀'+G.resources.light+' 🪨'+G.resources.earth+' 🧪'+G.resources.nutrient+' 🍎'+G.handFruit+' | HP:'+G.playerHp+' ATK:'+G.playerAtk+' DEF:'+G.playerDef+' AP:'+G.playerMaxAp;
+  console.log(resLine);
+  addLog(resLine, 'info');
 
   G.playerAp=G.playerMaxAp;
   G.phase='action';
@@ -676,6 +679,25 @@ function checkWin() {
     render(); updateUI();
   }
 }
+
+// ============================================================
+// 导出日志
+// ============================================================
+document.getElementById('btn-export').addEventListener('click', function() {
+  var lines = [];
+  for (var i = 0; i < G.log.length; i++) {
+    lines.push(G.log[i].msg);
+  }
+  var text = lines.join(String.fromCharCode(10));
+  var blob = new Blob([text], {type:'text/plain;charset=utf-8'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'plant-log-T' + G.turn + '.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+});
 
 // ============================================================
 // 启动
