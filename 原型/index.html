@@ -53,6 +53,11 @@ button.small { font-size:11px; padding:5px 8px; }
   <button id="btn-end-turn">⏩ 结束回合</button>
   <button id="btn-skip" class="small">跳过移动</button>
   <button id="btn-export" class="small" style="background:#0f3460;">📥 下载日志</button>
+  <h2>🌿 成长</h2>
+  <div class="res-row"><span class="label">ATK Lv<span id="lv-atk">0</span></span><button id="btn-up-atk" class="small" disabled>⚔</button></div>
+  <div class="res-row"><span class="label">DEF Lv<span id="lv-def">0</span></span><button id="btn-up-def" class="small" disabled>🛡</button></div>
+  <div class="res-row"><span class="label">HP Lv<span id="lv-hp">0</span></span><button id="btn-up-hp" class="small" disabled>❤</button></div>
+  <div class="res-row"><span class="label">AP Lv<span id="lv-ap">0</span></span><button id="btn-up-ap" class="small" disabled>⚡</button></div>
   <div class="tile-info" id="tile-info">点击地块查看信息</div>
   <h2>📜 日志</h2>
   <div id="log"></div>
@@ -63,7 +68,7 @@ button.small { font-size:11px; padding:5px 8px; }
 // 配置表 - 所有数值在这里改
 // ============================================================
 var CFG = {
-  BOARD_W: 6, BOARD_H: 6, CELL: 90,
+  BOARD_W: 8, BOARD_H: 8, CELL: 80,
   TILE_OUTPUT: { water: 5, light: 5, earth: 5 },
   COST: {
     seed:   { water:2, light:1, earth:2 },
@@ -83,6 +88,13 @@ var CFG = {
   AP_MOVE:    1, AP_ATTACK: 2, AP_SOW: 2,
   STEM_SLOW: 1, STEM_DEFENSE: 0.5,
   ENEMY: { hp:12, atk:5, def:2, move:2, range:1, ai:'aggressive' },
+  // 升级消耗 (每级)
+  UPGRADE: {
+    atk: [{light:10,nutrient:5},{light:30,nutrient:12},{light:70,nutrient:25},{light:160,nutrient:55},{light:350,nutrient:120}],
+    def: [{earth:10,nutrient:5},{earth:30,nutrient:12},{earth:70,nutrient:25},{earth:160,nutrient:55},{earth:350,nutrient:120}],
+    hp:  [{water:10,nutrient:5},{water:30,nutrient:12},{water:70,nutrient:25},{water:160,nutrient:55},{water:350,nutrient:120}],
+    ap:  [{fruit:1,water:10,light:10,earth:10,nutrient:10},{fruit:3,water:30,light:30,earth:30,nutrient:25},{fruit:6,water:70,light:70,earth:70,nutrient:50},{fruit:12,water:160,light:160,earth:160,nutrient:100},{fruit:25,water:350,light:350,earth:350,nutrient:220}]
+  },
 };
 
 // ============================================================
@@ -96,6 +108,7 @@ var G = {
   playerAp:4, playerMaxAp:4,
   resources: { water:0, light:0, earth:0, nutrient:0 },
   handFruit: 3,
+  upgrades: {atk:0, def:0, hp:0, ap:0},
   turn: 1, phase: 'action',
   enemies: [], log: [], gameOver: null, decayActive: false,
 };
@@ -250,6 +263,13 @@ function updateUI() {
   document.getElementById('hp-display').textContent = G.playerHp+'/'+G.playerMaxHp;
   document.getElementById('ad-display').textContent = G.playerAtk+' / '+G.playerDef;
   document.getElementById('ap-display').textContent = G.playerAp+'/'+G.playerMaxAp;
+  // 升级按钮状态
+  ['atk','def','hp','ap'].forEach(function(type){
+    document.getElementById('lv-'+type).textContent = G.upgrades[type];
+    var btn = document.getElementById('btn-up-'+type);
+    btn.disabled = G.phase!=='action' || !canUpgrade(type);
+    btn.textContent = getUpgradeCost(type);
+  });
   document.getElementById('res-water').textContent = G.resources.water;
   document.getElementById('res-light').textContent = G.resources.light;
   document.getElementById('res-earth').textContent = G.resources.earth;
@@ -670,6 +690,65 @@ function moveToward(e, tx, ty) {
 }
 
 // ============================================================
+// 升级
+// ============================================================
+function tryUpgrade(type) {
+  if (G.phase!=='action'||G.gameOver) return;
+  var lv = G.upgrades[type];
+  if (lv>=5) { addLog('已满级！','warn'); return; }
+  var cost = CFG.UPGRADE[type][lv];
+
+  // 检查资源
+  if (cost.water  && G.resources.water  <cost.water)  { addLog('水不足！','warn'); return; }
+  if (cost.light  && G.resources.light  <cost.light)  { addLog('光不足！','warn'); return; }
+  if (cost.earth  && G.resources.earth  <cost.earth)  { addLog('土不足！','warn'); return; }
+  if (cost.nutrient&&G.resources.nutrient<cost.nutrient){addLog('养分不足！','warn');return;}
+  if (cost.fruit   && G.handFruit       <cost.fruit)   { addLog('果不足！','warn'); return; }
+
+  // 扣资源
+  if (cost.water)  G.resources.water  -= cost.water;
+  if (cost.light)  G.resources.light  -= cost.light;
+  if (cost.earth)  G.resources.earth  -= cost.earth;
+  if (cost.nutrient)G.resources.nutrient-= cost.nutrient;
+  if (cost.fruit)  G.handFruit        -= cost.fruit;
+
+  // 生效
+  G.upgrades[type]++;
+  var names={atk:'ATK',def:'DEF',hp:'HP',ap:'AP'};
+  if (type==='atk') G.playerAtk++;
+  if (type==='def') G.playerDef++;
+  if (type==='hp')  { G.playerHp+=3; G.playerMaxHp+=3; }
+  if (type==='ap')  { G.playerMaxAp++; G.playerAp++; }
+  addLog('⬆ '+names[type]+'升级 Lv'+G.upgrades[type]+'！','good');
+  render(); updateUI();
+}
+
+function canUpgrade(type) {
+  var lv = G.upgrades[type];
+  if (lv>=5) return false;
+  var cost = CFG.UPGRADE[type][lv];
+  if (cost.water  &&G.resources.water  <cost.water)  return false;
+  if (cost.light  &&G.resources.light  <cost.light)  return false;
+  if (cost.earth  &&G.resources.earth  <cost.earth)  return false;
+  if (cost.nutrient&&G.resources.nutrient<cost.nutrient)return false;
+  if (cost.fruit  &&G.handFruit       <cost.fruit)   return false;
+  return true;
+}
+
+function getUpgradeCost(type) {
+  var lv = G.upgrades[type];
+  if (lv>=5) return 'MAX';
+  var c = CFG.UPGRADE[type][lv];
+  var parts = [];
+  if (c.water)   parts.push('D'+c.water);
+  if (c.light)   parts.push('G'+c.light);
+  if (c.earth)   parts.push('T'+c.earth);
+  if (c.nutrient)parts.push('Y'+c.nutrient);
+  if (c.fruit)   parts.push('F'+c.fruit);
+  return parts.join(' ');
+}
+
+// ============================================================
 // 胜负
 // ============================================================
 function checkWin() {
@@ -679,6 +758,15 @@ function checkWin() {
     render(); updateUI();
   }
 }
+
+// ============================================================
+// 升级按钮
+// ============================================================
+['atk','def','hp','ap'].forEach(function(type){
+  document.getElementById('btn-up-'+type).addEventListener('click', function(){
+    tryUpgrade(type);
+  });
+});
 
 // ============================================================
 // 导出日志
