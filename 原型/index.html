@@ -52,7 +52,6 @@ button.small { font-size:11px; padding:5px 8px; }
   <button id="btn-sow" disabled>🌰 播种 (消耗1果,2AP)</button>
   <button id="btn-end-turn">⏩ 结束回合</button>
   <button id="btn-skip" class="small">跳过移动</button>
-  <button id="btn-export" class="small" style="margin-top:4px;background:#0f3460;">📥 导出日志</button>
   <div class="tile-info" id="tile-info">点击地块查看信息</div>
   <h2>📜 日志</h2>
   <div id="log"></div>
@@ -677,25 +676,6 @@ function checkWin() {
     render(); updateUI();
   }
 }
-
-// ============================================================
-// 导出日志
-// ============================================================
-document.getElementById('btn-export').addEventListener('click', function() {
-  var lines = [];
-  for (var i = 0; i < G.log.length; i++) {
-    lines.push('[' + G.turn + '] ' + G.log[i].msg);
-  }
-  var text = lines.join('
-');
-  var blob = new Blob([text], {type:'text/plain;charset=utf-8'});
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  a.href = url;
-  a.download = 'plant-chess-log-' + G.turn + '.txt';
-  a.click();
-  URL.revokeObjectURL(url);
-});
 
 // ============================================================
 // 启动
