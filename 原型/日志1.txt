@@ -1,9 +1,0 @@
-📊 T2 💧3 ☀4 🪨3 🧪0 🍎2 | HP:20 ATK:6 DEF:2 AP:4
-index.html:403 📊 T3 💧14 ☀17 🪨15 🧪2 🍎1 | HP:20 ATK:6 DEF:2 AP:4
-index.html:403 📊 T4 💧32 ☀38 🪨35 🧪6 🍎1 | HP:20 ATK:6 DEF:2 AP:4
-index.html:403 📊 T5 💧58 ☀68 🪨64 🧪12 🍎1 | HP:20 ATK:6 DEF:2 AP:4
-index.html:403 📊 T6 💧91 ☀106 🪨101 🧪20 🍎2 | HP:20 ATK:6 DEF:2 AP:4
-index.html:403 📊 T7 💧132 ☀153 🪨147 🧪32 🍎3 | HP:20 ATK:6 DEF:2 AP:4
-index.html:403 📊 T8 💧182 ☀209 🪨203 🧪48 🍎6 | HP:20 ATK:6 DEF:2 AP:4
-index.html:403 📊 T9 💧275 ☀309 🪨302 🧪64 🍎8 | HP:20 ATK:6 DEF:2 AP:4
-index.html:403 📊 T10 💧338 ☀379 🪨372 🧪86 🍎11 | HP:20 ATK:6 DEF:2 AP:4

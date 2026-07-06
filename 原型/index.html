@@ -58,7 +58,7 @@ button.small { font-size:11px; padding:5px 8px; }
   <div class="res-row"><span class="label">DEF Lv<span id="lv-def">0</span></span><button id="btn-up-def" class="small" disabled>🛡</button></div>
   <div class="res-row"><span class="label">HP Lv<span id="lv-hp">0</span></span><button id="btn-up-hp" class="small" disabled>❤</button></div>
   <div class="res-row"><span class="label">AP Lv<span id="lv-ap">0</span></span><button id="btn-up-ap" class="small" disabled>⚡</button></div>
-  <div class="tile-info" id="tile-info">点击地块查看信息</div>
+  <div class="tile-info" id="tile-info" style="white-space:pre-line;font-size:11px;min-height:120px;background:#0f0f1a;padding:6px;border-radius:4px;">右键地块查看详细信息</div>
   <h2>📜 日志</h2>
   <div id="log"></div>
 </div>
@@ -373,6 +373,67 @@ function tryAttack(enemy) {
     addLog('敌人被消灭！','good'); checkWin();
   }
   render(); updateUI();
+}
+
+function showTileDetail(x,y) {
+  var t=G.board[y][x];
+  var ps=G.pieces[y][x];
+  var enemy=null;
+  for (var i=0; i<G.enemies.length; i++) {
+    if (G.enemies[i].x===x && G.enemies[i].y===y) { enemy=G.enemies[i]; break; }
+  }
+
+  var info = '📍 地块 ('+x+','+y+')
+';
+  info += '产出/回合: 💧'+CFG.TILE_OUTPUT.water+' ☀'+CFG.TILE_OUTPUT.light+' 🪨'+CFG.TILE_OUTPUT.earth+'
+';
+  info += '当前库存: 💧'+t.water+' ☀'+t.light+' 🪨'+t.earth+'
+';
+
+  // 棋子详情
+  if (ps.length>0) {
+    info += '
+📌 棋子 ('+ps.length+'个):
+';
+    var totalCost = {water:0,light:0,earth:0};
+    for (var i=0; i<ps.length; i++) {
+      var p=ps[i];
+      var cost=CFG.COST[p.type];
+      var name=PNAMES[p.type]||p.type;
+      var owner=p.owner==='player'?'我方':'敌方';
+      var active=p.active?'✓':'✗';
+      info += '  '+name+' ['+owner+'] 扎根:'+active;
+      if (cost) {
+        info += ' 消耗:💧'+cost.water+' ☀'+cost.light+' 🪨'+cost.earth;
+        totalCost.water+=cost.water||0;
+        totalCost.light+=cost.light||0;
+        totalCost.earth+=cost.earth||0;
+      }
+      info += '
+';
+    }
+    info += '  总消耗/回合: 💧'+totalCost.water+' ☀'+totalCost.light+' 🪨'+totalCost.earth+'
+';
+    var net = {
+      w:CFG.TILE_OUTPUT.water-totalCost.water,
+      l:CFG.TILE_OUTPUT.light-totalCost.light,
+      e:CFG.TILE_OUTPUT.earth-totalCost.earth
+    };
+    info += '  净产出/回合: 💧'+net.w+' ☀'+net.l+' 🪨'+net.e;
+    if (net.w<0||net.l<0||net.e<0) info += ' ⚠️入不敷出!';
+  } else {
+    info += '
+📌 无棋子';
+  }
+
+  // 敌人
+  if (enemy) {
+    info += '
+
+🐛 敌人: HP'+enemy.hp+'/'+enemy.maxHp+' ATK'+enemy.atk+' DEF'+enemy.def+' 移动'+enemy.move;
+  }
+
+  document.getElementById('tile-info').textContent=info;
 }
 
 function showTileInfo(x,y) {
